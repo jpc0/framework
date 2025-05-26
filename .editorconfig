@@ -1,0 +1,30 @@
+# Top-most EditorConfig file
+root = true
+
+[*]
+end_of_line = lf
+trim_trailing_whitespace = true
+insert_final_newline = true
+charset = utf-8
+
+[*.{c,cpp,cc,cxx,ino}]
+indent_style = space
+indent_size = 4
+max_line_length = 80
+
+[*.{h,hpp,hxx,hh}]
+indent_style = space
+indent_size = 4
+max_line_length = 80
+
+[CMakeLists.txt]
+indent_style = space
+indent_size = 4
+
+[*.cmake]
+indent_style = space
+indent_size = 4
+
+# Other text files
+[*.{txt,md,yml,yaml}]
+max_line_length = off

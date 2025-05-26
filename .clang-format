@@ -1,0 +1,29 @@
+---
+BasedOnStyle: Google
+
+# Basic indentation configuration
+IndentWidth: 4
+UseTab: Never
+TabWidth: 4
+ColumnLimit: 80
+
+# Maintain LLVM-style alignment but with 4-space indents
+ContinuationIndentWidth: 4
+AccessModifierOffset: -4
+
+AlignAfterOpenBracket: Align
+AlignArrayOfStructures: Right
+AlignConsecutiveAssignments: Consecutive
+AlignOperands: AlignAfterOperator
+AllowShortNamespacesOnASingleLine: false
+AllowShortFunctionsOnASingleLine: false
+AllowShortBlocksOnASingleLine: false
+# AllowShortBracedInitListOnASingleLine: false
+BinPackParameters: AlwaysOnePerLine
+BreakBeforeBraces: Attach
+BreakBeforeConceptDeclarations: Always
+BreakConstructorInitializers: BeforeComma
+BreakTemplateDeclarations: Yes
+CompactNamespaces: false
+EmptyLineAfterAccessModifier: Never
+InsertBraces: true
