@@ -1,13 +1,11 @@
-#include <fmt/base.h>
+#include <curl/curl.h>
+#include <curl/easy.h>
 #include <fmt/format.h>
 
 #include <boost/fiber/all.hpp>
-#include <boost/fiber/operations.hpp>
 #include <boost/lockfree/queue.hpp>
-#include <chrono>
 #include <csignal>
 #include <exception>
-#include <sstream>
 #include <stdexcept>
 #include <stdexec/execution.hpp>
 #include <thread>
@@ -63,7 +61,13 @@ public:
             auto start() noexcept {
                 ex_->submit([&] {
                     try {
-                        stdexec::set_value(static_cast<R &&>(recv_));
+                        if (stdexec::get_stop_token(static_cast<R &&>(recv_))
+                                .stop_requested() ||
+                            ex_->task_channel_.is_closed()) {
+                            stdexec::set_stopped(static_cast<R &&>(recv_));
+                        } else {
+                            stdexec::set_value(static_cast<R &&>(recv_));
+                        }
                     } catch (...) {
                         stdexec::set_error(static_cast<R &&>(recv_),
                                            std::current_exception());
@@ -118,6 +122,7 @@ public:
     };
 
 private:
+    friend scheduler_;
     void thread(std::uint32_t thread_count) {
         /* TODO: We cannot use work stealing because the scheduler spins on lock
         boost::fibers::use_scheduling_algorithm<
@@ -132,6 +137,23 @@ private:
     std::vector<std::jthread> threads_;
 };
 
+auto write_callback(char *ptr,
+                    size_t size,
+                    size_t nmemb,
+                    void *userdata) -> size_t {
+    fmt::println("{}", std::string_view(ptr, size * nmemb));
+    return size * nmemb;
+};
+
+auto header_callback(char *buffer,
+                     size_t size,
+                     size_t nitems,
+                     void *userdata) -> size_t {
+    fmt::print("size: {};nitems: {}\n\tHEADER: {}", size, nitems,
+               std::string_view(buffer, size * nitems));
+    return size * nitems;
+};
+
 auto main() -> int {
     using namespace std::chrono_literals;
     signal(SIGINT, catch_int);
@@ -140,19 +162,15 @@ auto main() -> int {
     std::atomic<bool> should_quit{false};
     auto sch = ex.get_scheduler();
 
-    auto fun = [](int i) {
-        auto thread_id =
-            (std::stringstream{} << std::this_thread::get_id()).str();
-        // fmt::println("running: {} on {}", i, thread_id);
-        boost::this_fiber::sleep_for(10s);
-        fmt::println("completed: {} on {}", i, thread_id);
-    };
-    auto main_thread_id =
-        (std::stringstream{} << std::this_thread::get_id()).str();
-    for (auto i = 0; i < 1'000'000; i++) {
-        stdexec::start_detached(
-            stdexec::start_on(sch, stdexec::just(i) | stdexec::then(fun)));
+    auto *handle = curl_easy_init();
+    if (!handle) {
+        throw std::runtime_error("Failed to init curl handle");
     }
+    curl_easy_setopt(handle, CURLOPT_URL, "https://www.example.com/");
+    curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, write_callback);
+    curl_easy_setopt(handle, CURLOPT_HEADERFUNCTION, header_callback);
+    auto res = curl_easy_perform(handle);
+    curl_easy_cleanup(handle);
 
     while (!should_quit) {
         int a;
@@ -161,22 +179,6 @@ auto main() -> int {
             ex.shutdown();
             break;
         }
-
-        // Simulate some work
-        /*
-        fmt::println("\nMain Thread: {}", main_thread_id);
-        auto work = stdexec::when_all(
-            stdexec::start_on(sch, stdexec::just(0) | stdexec::then(fun)),
-            stdexec::start_on(sch, stdexec::just(1) | stdexec::then(fun)),
-            stdexec::start_on(sch, stdexec::just(2) | stdexec::then(fun)),
-            stdexec::start_on(sch, stdexec::just(3) | stdexec::then(fun)),
-            stdexec::start_on(sch, stdexec::just(4) | stdexec::then(fun)),
-            stdexec::start_on(sch, stdexec::just(5) | stdexec::then(fun)),
-            stdexec::start_on(sch, stdexec::just(6) | stdexec::then(fun)),
-            stdexec::start_on(sch, stdexec::just(7) | stdexec::then(fun)));
-
-        stdexec::sync_wait(std::move(work));
-        */
 
         boost::this_fiber::yield();
         std::this_thread::sleep_for(10ms);

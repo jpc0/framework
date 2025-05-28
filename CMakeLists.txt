@@ -26,4 +26,6 @@ CPMAddPackage(
   SYSTEM ON
 )
 
+find_package(CURL REQUIRED)
+
 add_subdirectory(src)
