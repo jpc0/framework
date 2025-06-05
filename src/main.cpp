@@ -1,5 +1,6 @@
 #include <curl/curl.h>
 #include <curl/easy.h>
+#include <curl/urlapi.h>
 #include <fmt/format.h>
 
 #include <boost/fiber/all.hpp>
@@ -154,6 +155,67 @@ auto header_callback(char *buffer,
     return size * nitems;
 };
 
+class Request {
+public:
+    Request(std::string const &url) : handle_{curl_easy_init()} {
+        if (!handle_) {
+            throw std::runtime_error("Failed to init curl handle");
+        }
+        curl_easy_setopt(handle_, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(handle_, CURLOPT_WRITEDATA, this);
+        curl_easy_setopt(handle_, CURLOPT_HEADERDATA, this);
+        curl_easy_setopt(handle_, CURLOPT_WRITEFUNCTION,
+                         Request::write_callback);
+        curl_easy_setopt(handle_, CURLOPT_HEADERFUNCTION,
+                         Request::header_callback);
+    }
+
+    ~Request() {
+        curl_easy_cleanup(handle_);
+    }
+
+    auto make_request() {
+        curl_easy_perform(handle_);
+    }
+
+    auto get_headers() -> std::span<char> {
+        return headers_;
+    }
+
+    auto get_body() -> std::span<char> {
+        return body_;
+    }
+
+    static auto write_callback(char *ptr,
+                               size_t size,
+                               size_t nmemb,
+                               void *userdata) -> size_t {
+        auto request = static_cast<Request *>(userdata);
+        request->body_.reserve(size * nmemb);
+        for (auto i : std::span(ptr, size * nmemb)) {
+            request->body_.emplace_back(i);
+        }
+        return size * nmemb;
+    }
+
+    static auto header_callback(char *buffer,
+                                size_t size,
+                                size_t nitems,
+                                void *userdata) -> size_t {
+        auto request = static_cast<Request *>(userdata);
+        request->headers_.reserve(size * nitems);
+        for (auto i : std::span(buffer, size * nitems)) {
+            request->headers_.emplace_back(i);
+        }
+        return size * nitems;
+    };
+
+private:
+    std::vector<char> body_;
+    std::vector<char> headers_;
+    CURL *handle_;
+};
+
 auto main() -> int {
     using namespace std::chrono_literals;
     signal(SIGINT, catch_int);
@@ -162,15 +224,12 @@ auto main() -> int {
     std::atomic<bool> should_quit{false};
     auto sch = ex.get_scheduler();
 
-    auto *handle = curl_easy_init();
-    if (!handle) {
-        throw std::runtime_error("Failed to init curl handle");
+    {
+        Request req{"https://www.example.com/api"};
+        req.make_request();
+        fmt::println("Headers:\n{}\n", std::string_view(req.get_headers()));
+        fmt::println("Body:\n{}\n", std::string_view(req.get_body()));
     }
-    curl_easy_setopt(handle, CURLOPT_URL, "https://www.example.com/");
-    curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, write_callback);
-    curl_easy_setopt(handle, CURLOPT_HEADERFUNCTION, header_callback);
-    auto res = curl_easy_perform(handle);
-    curl_easy_cleanup(handle);
 
     while (!should_quit) {
         int a;
